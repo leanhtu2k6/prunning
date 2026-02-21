@@ -1,7 +1,7 @@
-#sua 2 file ultralytics/engine/model.py ultralytics/engine/trainer.py
+# sua 2 file ultralytics/engine/model.py ultralytics/engine/trainer.py
 from ultralytics import YOLO
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     model = YOLO("weights/best.pt")
     model.train(
         sr=5e-4,
@@ -9,8 +9,8 @@ if __name__ == '__main__':
         data="ultralytics/cfg/datasets/coco8.yaml",
         epochs=50,
         patience=50,
-        project='.',
-        name='weights/train-sparsity',
+        project=".",
+        name="weights/train-sparsity",
         batch=8,
-        device=0
+        device=0,
     )
