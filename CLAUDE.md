@@ -9,21 +9,17 @@ hiện tại chỉ triển khai phần pruning, distilation sẽ được thực
 
 python prune.py --weights weights/best.pt --cfg cfg/yolo26m.yaml --prune-ratio 0.3
 
-lệnh chính sẽ được thực hiện nhiều lần 
-
-
-
+lệnh chính sẽ được thực hiện nhiều lần
 
 YOLOv26 Model Pruning - Project Context
 Dự án
 Implement channel pruning cho YOLOv26 object detection model để giảm kích thước model và tăng tốc độ inference.
 Cấu trúc
 ultralytics-main/
-├── prune.py                           # Script chính chạy pruning
+├── prune.py # Script chính chạy pruning
 ├── ultralytics/nn/
-│   ├── tasks_pruned.py                # Build pruned model từ masks
-│   └── modules/
-│       ├── block_pruned.py            # Pruned modules (C3kPruned, C3k2Pruned, etc.)
-│       └── head_pruned.py             # DetectPruned head
+│ ├── tasks_pruned.py # Build pruned model từ masks
+│ └── modules/
+│ ├── block_pruned.py # Pruned modules (C3kPruned, C3k2Pruned, etc.)
+│ └── head_pruned.py # DetectPruned head
 Workflow
-

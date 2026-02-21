@@ -7,33 +7,30 @@ from copy import deepcopy
 import torch
 import torch.nn as nn
 
-from ultralytics.nn.tasks import BaseModel
-from ultralytics.nn.modules.conv import Conv, DWConv, Concat
-from ultralytics.nn.modules.head_pruned import DetectPruned
 from ultralytics.nn.modules.block_pruned import (
     BottleneckPruned,
-    C3kPruned,
+    C2PSAPruned,
     C3k2Pruned,
     C3k2PrunedAttn,
+    C3kPruned,
     SPPFPruned,
-    C2PSAPruned,
 )
-
+from ultralytics.nn.modules.conv import Concat, Conv, DWConv
+from ultralytics.nn.modules.head_pruned import DetectPruned
+from ultralytics.nn.tasks import BaseModel
 from ultralytics.utils import LOGGER, colorstr
 from ultralytics.utils.loss import v8DetectionLoss
 from ultralytics.utils.torch_utils import initialize_weights, scale_img
 
 
 class DetectionModelPruned(BaseModel):
-    """
-    YOLOv26 Detection Model - Pruned version.
+    """YOLOv26 Detection Model - Pruned version.
 
     forward继承BaseModel
     """
 
     def __init__(self, maskbndict, cfg, ch=3, nc=None, verbose=True):
-        """
-        Initialize the YOLOv26 detection model with the given config and parameters.
+        """Initialize the YOLOv26 detection model with the given config and parameters.
 
         Args:
             maskbndict (dict): Pruning masks dict
@@ -46,11 +43,9 @@ class DetectionModelPruned(BaseModel):
         self.yaml = cfg
         # 注意这里一定要deepcopy一下cfg, 因为当模型剪枝过程全部结束时我们要把模型保存下来, 包括模型配置信息
         # 所以我们并不想改变模型配置信息, 如果改变, 当再次用配置信息去构建网络的时候就会出错
-        self.model, self.save, self.current_to_prev = parse_model_pruned(
-            maskbndict, deepcopy(cfg), ch, verbose
-        )
-        self.names = {i: f'{i}' for i in range(self.yaml['nc'])}  # default names dict
-        self.inplace = self.yaml.get('inplace', True)
+        self.model, self.save, self.current_to_prev = parse_model_pruned(maskbndict, deepcopy(cfg), ch, verbose)
+        self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
+        self.inplace = self.yaml.get("inplace", True)
 
         # Build strides
         m = self.model[-1]  # Detect()
@@ -74,13 +69,13 @@ class DetectionModelPruned(BaseModel):
                 # Trong eval mode, forward trả về (y, preds) hoặc y
                 # y là prediction output, preds là dict chứa feature maps
                 if isinstance(forward_output, tuple):
-                    y, preds = forward_output
+                    _y, preds = forward_output
                     # Lấy feature maps từ preds
                     if isinstance(preds, dict):
-                        if 'one2many' in preds:
-                            feats = preds['one2many'].get('feats', [])
+                        if "one2many" in preds:
+                            feats = preds["one2many"].get("feats", [])
                         else:
-                            feats = preds.get('feats', [])
+                            feats = preds.get("feats", [])
                     else:
                         feats = []
                 else:
@@ -92,7 +87,7 @@ class DetectionModelPruned(BaseModel):
                 else:
                     # Fallback: tính stride dựa trên số scales
                     # Giả định 3 scales với stride 8, 16, 32
-                    m.stride = torch.tensor([8., 16., 32.])
+                    m.stride = torch.tensor([8.0, 16.0, 32.0])
 
                 # Quay lại training mode
                 self.train()
@@ -106,7 +101,7 @@ class DetectionModelPruned(BaseModel):
         initialize_weights(self)
         if verbose:
             self.info()
-            LOGGER.info('')
+            LOGGER.info("")
 
     def _predict_augment(self, x):
         """Perform augmentations on input image x and return augmented inference and train outputs."""
@@ -136,9 +131,9 @@ class DetectionModelPruned(BaseModel):
     def _clip_augmented(self, y):
         """Clip YOLO augmented inference tails."""
         nl = self.model[-1].nl  # number of detection layers (P3-P5)
-        g = sum(4 ** x for x in range(nl))  # grid points
+        g = sum(4**x for x in range(nl))  # grid points
         e = 1  # exclude layer count
-        i = (y[0].shape[-1] // g) * sum(4 ** x for x in range(e))  # indices
+        i = (y[0].shape[-1] // g) * sum(4**x for x in range(e))  # indices
         y[0] = y[0][..., :-i]  # large
         i = (y[-1].shape[-1] // g) * sum(4 ** (nl - 1 - x) for x in range(e))  # indices
         y[-1] = y[-1][..., i:]  # small
@@ -150,11 +145,9 @@ class DetectionModelPruned(BaseModel):
 
 
 def parse_model_pruned(maskbndict, d, ch, verbose=True):
-    """
-    Parse pruned model từ YAML config và pruning masks.
+    """Parse pruned model từ YAML config và pruning masks.
 
-    网络构建(ch是个列表, 记录着每一层的输出通道数; current_to_prev是一个字典,
-    记录着{某一bn层的名字: 该bn层连接的上一(多)bn层的名字}):
+    网络构建(ch是个列表, 记录着每一层的输出通道数; current_to_prev是一个字典, 记录着{某一bn层的名字: 该bn层连接的上一(多)bn层的名字}):
 
     YOLOv26 modules:
         - Conv: 基础卷积层
@@ -168,7 +161,7 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
 
     Args:
         maskbndict (dict): Pruning masks
-            Format: {'model.{i}.bn': tensor([True, False, ...]), ...}
+        Format: {'model.{i}.bn': tensor([True, False, ...]), ...}
         d (dict): Model dict từ YAML
         ch (int): Input channels (3 for RGB)
         verbose (bool): Print layer info
@@ -179,11 +172,11 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
     import ast
 
     # Parse args
-    nc = d.get('nc', 80)
-    reg_max = d.get('reg_max', 1)  # YOLOv26 default
-    end2end = d.get('end2end', False)
-    act = d.get('activation')
-    depth = d.get('depth_multiple', 1.0)
+    nc = d.get("nc", 80)
+    reg_max = d.get("reg_max", 1)  # YOLOv26 default
+    end2end = d.get("end2end", False)
+    act = d.get("activation")
+    depth = d.get("depth_multiple", 1.0)
 
     if act:
         Conv.default_act = eval(act)
@@ -203,7 +196,7 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
     prev_bn_layer_name = None
     prev_module = None
 
-    for i, (f, n, m, args) in enumerate(d['backbone'] + d['head']):
+    for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):
         # Parse args
         for j, a in enumerate(args):
             if isinstance(a, str):
@@ -211,16 +204,16 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
                     args[j] = locals()[a] if a in locals() else ast.literal_eval(a)
 
         n = n_ = max(round(n * depth), 1) if n > 1 else n
-        base_name = f'model.{i}'
+        base_name = f"model.{i}"
 
         # ═══════════════════════════════════════════════════════
         # Module parsing
         # ═══════════════════════════════════════════════════════
 
-        if m == 'Conv':
+        if m == "Conv":
             # ─────────── CONV ───────────
             c1 = ch[f]
-            bn_layer_name = base_name + '.bn'
+            bn_layer_name = base_name + ".bn"
             mask = maskbndict[bn_layer_name]
             c2 = torch.sum(mask).int().item()
             # args từ YAML: [original_c2, k, s, ...] → bỏ args[0], giữ k, s, ...
@@ -236,10 +229,10 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
 
             m = Conv
 
-        elif m == 'DWConv':
+        elif m == "DWConv":
             # ─────────── DWCONV ───────────
             c1 = ch[f]
-            bn_layer_name = base_name + '.bn'
+            bn_layer_name = base_name + ".bn"
             mask = maskbndict[bn_layer_name]
             c2 = torch.sum(mask).int().item()
             # args từ YAML: [original_c2, k, s, ...] → bỏ args[0]
@@ -253,11 +246,11 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
 
             m = DWConv
 
-        elif m == 'BottleneckPruned':
+        elif m == "BottleneckPruned":
             # ─────────── BOTTLENECK PRUNED ───────────
             c1 = ch[f]
-            cv1_bn_name = base_name + '.cv1.bn'
-            cv2_bn_name = base_name + '.cv2.bn'
+            cv1_bn_name = base_name + ".cv1.bn"
+            cv2_bn_name = base_name + ".cv2.bn"
 
             cv1_mask = maskbndict[cv1_bn_name]
             cv2_mask = maskbndict[cv2_bn_name]
@@ -276,12 +269,12 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
 
             m = BottleneckPruned
 
-        elif m == 'C3kPruned':
+        elif m == "C3kPruned":
             # ─────────── C3K PRUNED ───────────
             c1 = ch[f]
-            cv1_bn_name = base_name + '.cv1.bn'
-            cv2_bn_name = base_name + '.cv2.bn'
-            cv3_bn_name = base_name + '.cv3.bn'
+            cv1_bn_name = base_name + ".cv1.bn"
+            cv2_bn_name = base_name + ".cv2.bn"
+            cv3_bn_name = base_name + ".cv3.bn"
 
             cv1_mask = maskbndict[cv1_bn_name]
             cv2_mask = maskbndict[cv2_bn_name]
@@ -294,7 +287,7 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             # Parse bottleneck channels (giống C3k2Pruned parse C3k modules)
             bottleneck_indices = []
             for j in range(10):  # Max 10 bottlenecks
-                test_key = base_name + f'.m.{j}.cv1.bn'
+                test_key = base_name + f".m.{j}.cv1.bn"
                 if test_key in maskbndict:
                     bottleneck_indices.append(j)
                 else:
@@ -305,15 +298,13 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             bottleneck_cv2outs = []
 
             for j in bottleneck_indices:
-                bn_cv1_name = base_name + f'.m.{j}.cv1.bn'
-                bn_cv2_name = base_name + f'.m.{j}.cv2.bn'
+                bn_cv1_name = base_name + f".m.{j}.cv1.bn"
+                bn_cv2_name = base_name + f".m.{j}.cv2.bn"
 
                 bottleneck_cv1outs.append(torch.sum(maskbndict[bn_cv1_name]).int().item())
                 bottleneck_cv2outs.append(torch.sum(maskbndict[bn_cv2_name]).int().item())
 
-            args = [c1, cv1out, cv2out, cv3out,
-                    bottleneck_cv1outs, bottleneck_cv2outs,
-                    n_bottlenecks, *args]
+            args = [c1, cv1out, cv2out, cv3out, bottleneck_cv1outs, bottleneck_cv2outs, n_bottlenecks, *args]
             c2 = cv3out
 
             # Track dependencies
@@ -323,13 +314,13 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
 
             # Track bottlenecks
             for j in bottleneck_indices:
-                bn_cv1_name = base_name + f'.m.{j}.cv1.bn'
-                bn_cv2_name = base_name + f'.m.{j}.cv2.bn'
+                bn_cv1_name = base_name + f".m.{j}.cv1.bn"
+                bn_cv2_name = base_name + f".m.{j}.cv2.bn"
 
                 if j == 0:
                     current_to_prev[bn_cv1_name] = cv1_bn_name
                 else:
-                    prev_bn_cv2 = base_name + f'.m.{j - 1}.cv2.bn'
+                    prev_bn_cv2 = base_name + f".m.{j - 1}.cv2.bn"
                     current_to_prev[bn_cv1_name] = prev_bn_cv2
 
                 current_to_prev[bn_cv2_name] = bn_cv1_name
@@ -340,26 +331,26 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             m = C3kPruned
             n = 1  # C3kPruned đã nhận n trong args
 
-        elif m == 'C3k2Pruned':
+        elif m == "C3k2Pruned":
             # ─────────── C3K2 PRUNED ───────────
             c1 = ch[f]
 
             # Get masks
-            cv1_bn_name = base_name + '.cv1.bn'
+            cv1_bn_name = base_name + ".cv1.bn"
             cv1_mask = maskbndict[cv1_bn_name]
             cv1out = torch.sum(cv1_mask).int().item()
 
             # Split sections
             cv1_split_sections = [
                 torch.sum(cv1_mask.chunk(2, 0)[0]).int().item(),
-                torch.sum(cv1_mask.chunk(2, 0)[1]).int().item()
+                torch.sum(cv1_mask.chunk(2, 0)[1]).int().item(),
             ]
 
             # Inner C3k modules - DETECT ĐỘNG số modules thực tế
             # Vì pruned model có thể có ít hơn n modules (ví dụ YAML n=3 nhưng chỉ có m.0)
             c3k_indices = []
             for j in range(10):  # Max 10 C3k modules
-                test_key = base_name + f'.m.{j}.cv1.bn'
+                test_key = base_name + f".m.{j}.cv1.bn"
                 if test_key in maskbndict:
                     c3k_indices.append(j)
                 else:
@@ -374,9 +365,9 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             c3k_n_bottlenecks = []  # Số bottleneck cho mỗi C3k
 
             for j in c3k_indices:
-                c3k_cv1_name = base_name + f'.m.{j}.cv1.bn'
-                c3k_cv2_name = base_name + f'.m.{j}.cv2.bn'
-                c3k_cv3_name = base_name + f'.m.{j}.cv3.bn'
+                c3k_cv1_name = base_name + f".m.{j}.cv1.bn"
+                c3k_cv2_name = base_name + f".m.{j}.cv2.bn"
+                c3k_cv3_name = base_name + f".m.{j}.cv3.bn"
 
                 c3k_cv1outs.append(torch.sum(maskbndict[c3k_cv1_name]).int().item())
                 c3k_cv2outs.append(torch.sum(maskbndict[c3k_cv2_name]).int().item())
@@ -385,7 +376,7 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
                 # Parse bottlenecks bên trong C3k này
                 bn_indices = []
                 for k in range(10):  # Max 10 bottlenecks per C3k
-                    bn_key = base_name + f'.m.{j}.m.{k}.cv1.bn'
+                    bn_key = base_name + f".m.{j}.m.{k}.cv1.bn"
                     if bn_key in maskbndict:
                         bn_indices.append(k)
                     else:
@@ -394,8 +385,8 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
                 bn_cv1outs = []
                 bn_cv2outs = []
                 for k in bn_indices:
-                    bn_cv1_key = base_name + f'.m.{j}.m.{k}.cv1.bn'
-                    bn_cv2_key = base_name + f'.m.{j}.m.{k}.cv2.bn'
+                    bn_cv1_key = base_name + f".m.{j}.m.{k}.cv1.bn"
+                    bn_cv2_key = base_name + f".m.{j}.m.{k}.cv2.bn"
                     bn_cv1outs.append(torch.sum(maskbndict[bn_cv1_key]).int().item())
                     bn_cv2outs.append(torch.sum(maskbndict[bn_cv2_key]).int().item())
 
@@ -404,7 +395,7 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
                 c3k_n_bottlenecks.append(len(bn_indices))
 
             # cv2
-            cv2_bn_name = base_name + '.cv2.bn'
+            cv2_bn_name = base_name + ".cv2.bn"
             cv2_mask = maskbndict[cv2_bn_name]
             cv2out = torch.sum(cv2_mask).int().item()
 
@@ -420,18 +411,26 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
                 rest_args = args[1:]  # shortcut, e
 
             args = [
-                c1, cv1out, cv1_split_sections,
-                c3k_cv1outs, c3k_cv2outs, c3k_cv3outs,
-                c3k_bottleneck_cv1outs, c3k_bottleneck_cv2outs, c3k_n_bottlenecks,
-                cv2out, n_c3k, n_bottlenecks, *rest_args
+                c1,
+                cv1out,
+                cv1_split_sections,
+                c3k_cv1outs,
+                c3k_cv2outs,
+                c3k_cv3outs,
+                c3k_bottleneck_cv1outs,
+                c3k_bottleneck_cv2outs,
+                c3k_n_bottlenecks,
+                cv2out,
+                n_c3k,
+                n_bottlenecks,
+                *rest_args,
             ]
             c2 = cv2out
 
             # Track dependencies
             current_to_prev[cv1_bn_name] = prev_bn_layer_name
-            if prev_module == 'Concat':
-                fx = ([f if f >= 0 else i + f] if isinstance(f, int)
-                      else [ix if ix >= 0 else i + ix for ix in f])
+            if prev_module == "Concat":
+                fx = [f if f >= 0 else i + f] if isinstance(f, int) else [ix if ix >= 0 else i + ix for ix in f]
                 all_bns = []
                 for ix in fx:
                     bn = idx_to_bn_layer_name[ix]
@@ -446,9 +445,9 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             # Track C3k modules
             prev_bn_layer_names_for_cv2 = [cv1_bn_name]
             for j_idx, j in enumerate(c3k_indices):
-                c3k_cv1_name = base_name + f'.m.{j}.cv1.bn'
-                c3k_cv2_name = base_name + f'.m.{j}.cv2.bn'
-                c3k_cv3_name = base_name + f'.m.{j}.cv3.bn'
+                c3k_cv1_name = base_name + f".m.{j}.cv1.bn"
+                c3k_cv2_name = base_name + f".m.{j}.cv2.bn"
+                c3k_cv3_name = base_name + f".m.{j}.cv3.bn"
 
                 current_to_prev[c3k_cv1_name] = prev_bn_layer_name
                 current_to_prev[c3k_cv2_name] = prev_bn_layer_name
@@ -457,13 +456,13 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
                 # Track bottlenecks bên trong C3k này
                 bn_count = c3k_n_bottlenecks[j_idx]
                 for k in range(bn_count):
-                    bn_cv1_key = base_name + f'.m.{j}.m.{k}.cv1.bn'
-                    bn_cv2_key = base_name + f'.m.{j}.m.{k}.cv2.bn'
+                    bn_cv1_key = base_name + f".m.{j}.m.{k}.cv1.bn"
+                    bn_cv2_key = base_name + f".m.{j}.m.{k}.cv2.bn"
 
                     if k == 0:
                         current_to_prev[bn_cv1_key] = c3k_cv1_name
                     else:
-                        prev_bn_cv2_key = base_name + f'.m.{j}.m.{k - 1}.cv2.bn'
+                        prev_bn_cv2_key = base_name + f".m.{j}.m.{k - 1}.cv2.bn"
                         current_to_prev[bn_cv1_key] = prev_bn_cv2_key
 
                     current_to_prev[bn_cv2_key] = bn_cv1_key
@@ -478,27 +477,27 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             m = C3k2Pruned
             n = 1
 
-        elif m == 'C3k2PrunedAttn':
+        elif m == "C3k2PrunedAttn":
             # ─────────── C3K2 PRUNED ATTN ───────────
             # Dành cho C3k2 có attn=True: m = Sequential(Bottleneck, PSABlock)
             # cv1.bn và PSABlock BNs nằm trong ignore_bn_list → không prune
             c1 = ch[f]
 
             # cv1 - KHÔNG prune (trong ignore_bn_list)
-            cv1_bn_name = base_name + '.cv1.bn'
-            cv1_mask = maskbndict[cv1_bn_name]   # mask = all ones
+            cv1_bn_name = base_name + ".cv1.bn"
+            cv1_mask = maskbndict[cv1_bn_name]  # mask = all ones
             cv1out = torch.sum(cv1_mask).int().item()
 
             cv1_split_sections = [
                 torch.sum(cv1_mask.chunk(2, 0)[0]).int().item(),
-                torch.sum(cv1_mask.chunk(2, 0)[1]).int().item()
+                torch.sum(cv1_mask.chunk(2, 0)[1]).int().item(),
             ]
 
             # Tìm Sequential(Bottleneck, PSABlock) blocks
             # Key: model.X.m.{j}.0.cv1.bn (Bottleneck tại vị trí j trong Sequential)
             seq_indices = []
             for j in range(10):
-                test_key = base_name + f'.m.{j}.0.cv1.bn'
+                test_key = base_name + f".m.{j}.0.cv1.bn"
                 if test_key in maskbndict:
                     seq_indices.append(j)
                 else:
@@ -507,11 +506,11 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             n_blocks = len(seq_indices)
             bottleneck_cv1outs = []
             for j in seq_indices:
-                bn_cv1_name = base_name + f'.m.{j}.0.cv1.bn'
+                bn_cv1_name = base_name + f".m.{j}.0.cv1.bn"
                 bottleneck_cv1outs.append(torch.sum(maskbndict[bn_cv1_name]).int().item())
 
             # cv2 - CÓ THỂ prune
-            cv2_bn_name = base_name + '.cv2.bn'
+            cv2_bn_name = base_name + ".cv2.bn"
             cv2_mask = maskbndict[cv2_bn_name]
             cv2out = torch.sum(cv2_mask).int().item()
 
@@ -523,9 +522,8 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
 
             # Track dependencies
             current_to_prev[cv1_bn_name] = prev_bn_layer_name
-            if prev_module == 'Concat':
-                fx = ([f if f >= 0 else i + f] if isinstance(f, int)
-                      else [ix if ix >= 0 else i + ix for ix in f])
+            if prev_module == "Concat":
+                fx = [f if f >= 0 else i + f] if isinstance(f, int) else [ix if ix >= 0 else i + ix for ix in f]
                 all_bns = []
                 for ix in fx:
                     bn = idx_to_bn_layer_name[ix]
@@ -538,8 +536,8 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             # Track Bottleneck cv1 và cv2 trong Sequential
             prev_bn_for_cv2 = [cv1_bn_name]
             for j in seq_indices:
-                bn_cv1_name = base_name + f'.m.{j}.0.cv1.bn'
-                bn_cv2_name = base_name + f'.m.{j}.0.cv2.bn'
+                bn_cv1_name = base_name + f".m.{j}.0.cv1.bn"
+                bn_cv2_name = base_name + f".m.{j}.0.cv2.bn"
                 # Bottleneck.cv1 nhận right_half của cv1 (tracking qua cv1_bn_name)
                 current_to_prev[bn_cv1_name] = cv1_bn_name
                 # Bottleneck.cv2 nhận output của cv1
@@ -555,11 +553,11 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             m = C3k2PrunedAttn
             n = 1
 
-        elif m == 'SPPFPruned':
+        elif m == "SPPFPruned":
             # ─────────── SPPF PRUNED ───────────
             c1 = ch[f]
-            cv1_bn_name = base_name + '.cv1.bn'
-            cv2_bn_name = base_name + '.cv2.bn'
+            cv1_bn_name = base_name + ".cv1.bn"
+            cv2_bn_name = base_name + ".cv2.bn"
 
             cv1_mask = maskbndict[cv1_bn_name]
             cv2_mask = maskbndict[cv2_bn_name]
@@ -588,29 +586,29 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             m = SPPFPruned
             n = 1  # SPPFPruned đã nhận n trong args
 
-        elif m == 'C2PSAPruned':
+        elif m == "C2PSAPruned":
             # ─────────── C2PSA PRUNED ───────────
             c1 = ch[f]
 
             # cv1 + split
-            cv1_bn_name = base_name + '.cv1.bn'
+            cv1_bn_name = base_name + ".cv1.bn"
             cv1_mask = maskbndict[cv1_bn_name]
             cv1out = torch.sum(cv1_mask).int().item()
 
             cv1_split_sections = [
                 torch.sum(cv1_mask.chunk(2, 0)[0]).int().item(),
-                torch.sum(cv1_mask.chunk(2, 0)[1]).int().item()
+                torch.sum(cv1_mask.chunk(2, 0)[1]).int().item(),
             ]
 
             # cv2
-            cv2_bn_name = base_name + '.cv2.bn'
+            cv2_bn_name = base_name + ".cv2.bn"
             cv2_mask = maskbndict[cv2_bn_name]
             cv2out = torch.sum(cv2_mask).int().item()
 
             # Auto-detect PSABlock count từ masks (robust hơn dùng YAML n)
             n_psa = 0
             for j in range(10):
-                test_key = base_name + f'.m.{j}.attn.qkv.bn'
+                test_key = base_name + f".m.{j}.attn.qkv.bn"
                 if test_key in maskbndict:
                     n_psa += 1
                 else:
@@ -635,7 +633,7 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             m = C2PSAPruned
             n = 1  # C2PSAPruned đã nhận n trong args, không wrap trong Sequential
 
-        elif m == 'DetectPruned':
+        elif m == "DetectPruned":
             # ─────────── DETECT PRUNED ───────────
             # YOLOv26 Detect với DWConv pattern
 
@@ -650,9 +648,9 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             cv2x2_conv_names = []
 
             for scale_idx in range(nl):
-                cv2x0_name = base_name + f'.cv2.{scale_idx}.0.bn'
-                cv2x1_name = base_name + f'.cv2.{scale_idx}.1.bn'
-                cv2x2_name = base_name + f'.cv2.{scale_idx}.2'
+                cv2x0_name = base_name + f".cv2.{scale_idx}.0.bn"
+                cv2x1_name = base_name + f".cv2.{scale_idx}.1.bn"
+                cv2x2_name = base_name + f".cv2.{scale_idx}.2"
 
                 cv2x0_outs.append(torch.sum(maskbndict[cv2x0_name]).int().item())
                 cv2x1_outs.append(torch.sum(maskbndict[cv2x1_name]).int().item())
@@ -673,11 +671,11 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             cv3x2_conv_names = []
 
             for scale_idx in range(nl):
-                cv3x0_dw_name = base_name + f'.cv3.{scale_idx}.0.0.bn'  # DWConv
-                cv3x0_pw_name = base_name + f'.cv3.{scale_idx}.0.1.bn'  # Conv
-                cv3x1_dw_name = base_name + f'.cv3.{scale_idx}.1.0.bn'  # DWConv
-                cv3x1_pw_name = base_name + f'.cv3.{scale_idx}.1.1.bn'  # Conv
-                cv3x2_name = base_name + f'.cv3.{scale_idx}.2'
+                cv3x0_dw_name = base_name + f".cv3.{scale_idx}.0.0.bn"  # DWConv
+                cv3x0_pw_name = base_name + f".cv3.{scale_idx}.0.1.bn"  # Conv
+                cv3x1_dw_name = base_name + f".cv3.{scale_idx}.1.0.bn"  # DWConv
+                cv3x1_pw_name = base_name + f".cv3.{scale_idx}.1.1.bn"  # Conv
+                cv3x2_name = base_name + f".cv3.{scale_idx}.2"
 
                 cv3x0_dw_outs.append(torch.sum(maskbndict[cv3x0_dw_name]).int().item())
                 cv3x0_pw_outs.append(torch.sum(maskbndict[cv3x0_pw_name]).int().item())
@@ -708,8 +706,8 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
 
                 for scale_idx in range(nl):
                     # one2one_cv2
-                    o2o_cv2x0_name = base_name + f'.one2one_cv2.{scale_idx}.0.bn'
-                    o2o_cv2x1_name = base_name + f'.one2one_cv2.{scale_idx}.1.bn'
+                    o2o_cv2x0_name = base_name + f".one2one_cv2.{scale_idx}.0.bn"
+                    o2o_cv2x1_name = base_name + f".one2one_cv2.{scale_idx}.1.bn"
 
                     if o2o_cv2x0_name in maskbndict and o2o_cv2x1_name in maskbndict:
                         one2one_cv2x0_outs.append(torch.sum(maskbndict[o2o_cv2x0_name]).int().item())
@@ -719,13 +717,15 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
                         one2one_cv2x1_outs.append(cv2x1_outs[scale_idx])
 
                     # one2one_cv3
-                    o2o_cv3x0_dw_name = base_name + f'.one2one_cv3.{scale_idx}.0.0.bn'
-                    o2o_cv3x0_pw_name = base_name + f'.one2one_cv3.{scale_idx}.0.1.bn'
-                    o2o_cv3x1_dw_name = base_name + f'.one2one_cv3.{scale_idx}.1.0.bn'
-                    o2o_cv3x1_pw_name = base_name + f'.one2one_cv3.{scale_idx}.1.1.bn'
+                    o2o_cv3x0_dw_name = base_name + f".one2one_cv3.{scale_idx}.0.0.bn"
+                    o2o_cv3x0_pw_name = base_name + f".one2one_cv3.{scale_idx}.0.1.bn"
+                    o2o_cv3x1_dw_name = base_name + f".one2one_cv3.{scale_idx}.1.0.bn"
+                    o2o_cv3x1_pw_name = base_name + f".one2one_cv3.{scale_idx}.1.1.bn"
 
-                    if all(k in maskbndict for k in [o2o_cv3x0_dw_name, o2o_cv3x0_pw_name,
-                                                     o2o_cv3x1_dw_name, o2o_cv3x1_pw_name]):
+                    if all(
+                        k in maskbndict
+                        for k in [o2o_cv3x0_dw_name, o2o_cv3x0_pw_name, o2o_cv3x1_dw_name, o2o_cv3x1_pw_name]
+                    ):
                         one2one_cv3x0_dw_outs.append(torch.sum(maskbndict[o2o_cv3x0_dw_name]).int().item())
                         one2one_cv3x0_pw_outs.append(torch.sum(maskbndict[o2o_cv3x0_pw_name]).int().item())
                         one2one_cv3x1_dw_outs.append(torch.sum(maskbndict[o2o_cv3x1_dw_name]).int().item())
@@ -737,12 +737,21 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
                         one2one_cv3x1_pw_outs.append(cv3x1_pw_outs[scale_idx])
 
             args = [
-                cv2x0_outs, cv2x1_outs,
-                cv3x0_dw_outs, cv3x0_pw_outs, cv3x1_dw_outs, cv3x1_pw_outs,
-                one2one_cv2x0_outs, one2one_cv2x1_outs,
-                one2one_cv3x0_dw_outs, one2one_cv3x0_pw_outs,
-                one2one_cv3x1_dw_outs, one2one_cv3x1_pw_outs,
-                nc, reg_max, tuple(input_chs)
+                cv2x0_outs,
+                cv2x1_outs,
+                cv3x0_dw_outs,
+                cv3x0_pw_outs,
+                cv3x1_dw_outs,
+                cv3x1_pw_outs,
+                one2one_cv2x0_outs,
+                one2one_cv2x1_outs,
+                one2one_cv3x0_dw_outs,
+                one2one_cv3x0_pw_outs,
+                one2one_cv3x1_dw_outs,
+                one2one_cv3x1_pw_outs,
+                nc,
+                reg_max,
+                tuple(input_chs),
             ]
 
             # Track dependencies
@@ -763,19 +772,19 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             if end2end:
                 for scale_idx in range(nl):
                     # one2one_cv2 branch
-                    o2o_cv2x0_name = base_name + f'.one2one_cv2.{scale_idx}.0.bn'
-                    o2o_cv2x1_name = base_name + f'.one2one_cv2.{scale_idx}.1.bn'
-                    o2o_cv2x2_name = base_name + f'.one2one_cv2.{scale_idx}.2'
+                    o2o_cv2x0_name = base_name + f".one2one_cv2.{scale_idx}.0.bn"
+                    o2o_cv2x1_name = base_name + f".one2one_cv2.{scale_idx}.1.bn"
+                    o2o_cv2x2_name = base_name + f".one2one_cv2.{scale_idx}.2"
                     current_to_prev[o2o_cv2x0_name] = idx_to_bn_layer_name[f[scale_idx]]
                     current_to_prev[o2o_cv2x1_name] = o2o_cv2x0_name
                     current_to_prev[o2o_cv2x2_name] = o2o_cv2x1_name
 
                     # one2one_cv3 branch
-                    o2o_cv3x0_dw_name = base_name + f'.one2one_cv3.{scale_idx}.0.0.bn'
-                    o2o_cv3x0_pw_name = base_name + f'.one2one_cv3.{scale_idx}.0.1.bn'
-                    o2o_cv3x1_dw_name = base_name + f'.one2one_cv3.{scale_idx}.1.0.bn'
-                    o2o_cv3x1_pw_name = base_name + f'.one2one_cv3.{scale_idx}.1.1.bn'
-                    o2o_cv3x2_name = base_name + f'.one2one_cv3.{scale_idx}.2'
+                    o2o_cv3x0_dw_name = base_name + f".one2one_cv3.{scale_idx}.0.0.bn"
+                    o2o_cv3x0_pw_name = base_name + f".one2one_cv3.{scale_idx}.0.1.bn"
+                    o2o_cv3x1_dw_name = base_name + f".one2one_cv3.{scale_idx}.1.0.bn"
+                    o2o_cv3x1_pw_name = base_name + f".one2one_cv3.{scale_idx}.1.1.bn"
+                    o2o_cv3x2_name = base_name + f".one2one_cv3.{scale_idx}.2"
                     current_to_prev[o2o_cv3x0_dw_name] = idx_to_bn_layer_name[f[scale_idx]]
                     current_to_prev[o2o_cv3x0_pw_name] = o2o_cv3x0_dw_name
                     current_to_prev[o2o_cv3x1_dw_name] = o2o_cv3x0_pw_name
@@ -785,13 +794,13 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
             c2 = nc
             m = DetectPruned
 
-        elif m == 'nn.Upsample':
+        elif m == "nn.Upsample":
             # ─────────── UPSAMPLE ───────────
             c2 = ch[f]
             idx_to_bn_layer_name[i] = idx_to_bn_layer_name[i - 1]
             m = nn.Upsample
 
-        elif m == 'Concat':
+        elif m == "Concat":
             # ─────────── CONCAT ───────────
             c2 = sum(ch[x] for x in f)
 
@@ -823,12 +832,12 @@ def parse_model_pruned(maskbndict, d, ch, verbose=True):
         # Create module
         # ═══════════════════════════════════════════════════════
         m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)
-        t = str(m)[8:-2].replace('__main__.', '')
+        t = str(m)[8:-2].replace("__main__.", "")
         m.np = sum(x.numel() for x in m_.parameters())
         m_.i, m_.f, m_.type = i, f, t
 
         if verbose:
-            LOGGER.info(f'{i:>3}{str(f):>20}{n_:>3}{m.np:10.0f}  {t:<50}{str(args):<30}')
+            LOGGER.info(f"{i:>3}{f!s:>20}{n_:>3}{m.np:10.0f}  {t:<50}{args!s:<30}")
 
         save.extend(x % i for x in ([f] if isinstance(f, int) else f) if x != -1)
         layers.append(m_)
