@@ -682,9 +682,6 @@ def main(opt):
             "config": {
                 "divisor": divisor,
                 "prune_ratio": prune_ratio,
-                "sr": getattr(opt, 'sr', None),
-                "no_amp": getattr(opt, 'no_amp', False),
-                "l1": getattr(opt, 'l1', 0.0),
             }
         },
         save_path
@@ -755,14 +752,6 @@ def parse_opt():
                             '  backbone: 0.3     # nhóm backbone\n'
                             '  head: 0.5         # nhóm head\n'
                             '  detect: 0.4       # detect head')
-
-    # Optional training integration flags
-    parser.add_argument('--sr', type=float, default=None,
-                       help='sparsity scheduler starting value (external schedulers may update); set 0 to request early stop')
-    parser.add_argument('--no-amp', action='store_true',
-                       help='disable AMP during training when integrating training runs')
-    parser.add_argument('--l1', type=float, default=0.0,
-                       help='L1 regularization weight to add to training loss')
 
     # Divisibility options
     parser.add_argument('--divisor', type=int, default=8,

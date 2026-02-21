@@ -342,10 +342,6 @@ class v8DetectionLoss:
         self.bce = nn.BCEWithLogitsLoss(reduction="none")
         self.hyp = h
         self.stride = m.stride  # model strides
-        # L1 regularization weight (can be set in model.args as `l1`), default 0.0
-        self.l1 = float(getattr(h, 'l1', 0.0))
-        # keep reference to model for param-wise regularization
-        self.model_ref = model
         self.nc = m.nc  # number of classes
         self.no = m.nc + m.reg_max * 4
         self.reg_max = m.reg_max
@@ -445,14 +441,6 @@ class v8DetectionLoss:
         loss[0] *= self.hyp.box  # box gain
         loss[1] *= self.hyp.cls  # cls gain
         loss[2] *= self.hyp.dfl  # dfl gain
-        # L1 regularization: add as extra term to box loss component (configurable via `l1`)
-        if self.l1 and self.l1 > 0.0:
-            try:
-                l1_reg = sum((p.abs().sum() for p in self.model_ref.parameters() if p.requires_grad))
-                loss[0] = loss[0] + (l1_reg * self.l1)
-            except Exception:
-                # safe fallback: ignore L1 if any unexpected error occurs
-                pass
         return (
             (fg_mask, target_gt_idx, target_bboxes, anchor_points, stride_tensor),
             loss,
