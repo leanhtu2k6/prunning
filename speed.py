@@ -1,8 +1,9 @@
-import torch
-import time
-from ultralytics import YOLO
-from thop import profile
 from copy import deepcopy
+
+import torch
+from thop import profile
+
+from ultralytics import YOLO
 
 
 def get_stats(model_path, img_size=640):
@@ -10,7 +11,7 @@ def get_stats(model_path, img_size=640):
 
     # 1. Load model
     model = YOLO(model_path)
-    model.to('cuda')
+    model.to("cuda")
     model.model.eval()
 
     # 2. Tính GFLOPs & Params (Dùng thop cho chính xác với mô hình đã prune)
@@ -60,5 +61,6 @@ if __name__ == "__main__":
     print(f"{'Params (M)':<15} | {p_orig:>15.2f} | {p_prun:>15.2f} | {((p_orig - p_prun) / p_orig) * 100:>8.1f}%")
     print(f"{'Latency (ms)':<15} | {l_orig:>15.2f} | {l_prun:>15.2f} | {((l_orig - l_prun) / l_orig) * 100:>8.1f}%")
     print(
-        f"{'FPS':<15} | {1000 / l_orig:>15.1f} | {1000 / l_prun:>15.1f} | {((1000 / l_prun - 1000 / l_orig) / (1000 / l_orig)) * 100:>8.1f}%")
+        f"{'FPS':<15} | {1000 / l_orig:>15.1f} | {1000 / l_prun:>15.1f} | {((1000 / l_prun - 1000 / l_orig) / (1000 / l_orig)) * 100:>8.1f}%"
+    )
     print("=" * 60)
