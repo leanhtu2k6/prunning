@@ -8,8 +8,6 @@ Usage:
 
 from __future__ import annotations
 
-from ultralytics.nn.modules.block import Bottleneck, PSABlock
-
 import gc
 import math
 import os
@@ -29,6 +27,7 @@ from torch import nn, optim
 from ultralytics import __version__
 from ultralytics.cfg import get_cfg, get_save_dir
 from ultralytics.data.utils import check_cls_dataset, check_det_dataset
+from ultralytics.nn.modules.block import Bottleneck, PSABlock
 from ultralytics.nn.tasks import load_checkpoint
 from ultralytics.optim import MuSGD
 from ultralytics.utils import (
@@ -302,7 +301,7 @@ class BaseTrainer:
 
         # ============================= Chuẩn bị Sparsity Training ==========================
         # Giữ giá trị sr đã được gán từ model.py, fallback 0.0 nếu chưa set
-        if not hasattr(self, 'sr') or self.sr is None:
+        if not hasattr(self, "sr") or self.sr is None:
             self.sr = 0.0
         self.ignore_bn_list = []
 
@@ -314,8 +313,8 @@ class BaseTrainer:
                 # 1. Xử lý Bottleneck
                 if isinstance(m, Bottleneck):
                     if m.add:
-                        self.ignore_bn_list.append(k + '.cv2.bn')
-                        if len(k.split('.')) >= 2 and k.split('.')[-2] == 'm':
+                        self.ignore_bn_list.append(k + ".cv2.bn")
+                        if len(k.split(".")) >= 2 and k.split(".")[-2] == "m":
                             parent_name = k.rsplit(".", 2)[0]
                             self.ignore_bn_list.append(parent_name + ".cv1.bn")
 
@@ -324,7 +323,7 @@ class BaseTrainer:
                     for sub_k, sub_m in m.named_modules():
                         if isinstance(sub_m, nn.BatchNorm2d):
                             self.ignore_bn_list.append(f"{k}.{sub_k}")
-                    parts = k.split('.')
+                    parts = k.split(".")
                     if len(parts) >= 2:
                         layer_idx = parts[1]
                         self.ignore_bn_list.append(f"model.{layer_idx}.cv1.bn")
@@ -478,13 +477,13 @@ class BaseTrainer:
 
                     # Backward
                     # ============================= disable scaler ==========================
-                    if getattr(self, 'sr', 0.0) > 0:
+                    if getattr(self, "sr", 0.0) > 0:
                         self.loss.backward()
                     else:
                         self.scaler.scale(self.loss).backward()
 
                     # ============================= sparsity training ==========================
-                    if getattr(self, 'sr', 0.0) > 0:
+                    if getattr(self, "sr", 0.0) > 0:
                         srtmp = self.sr * (1 - 0.9 * self.epoch / self.epochs)
                         for k, m in unwrap_model(self.model).named_modules():
                             if isinstance(m, nn.BatchNorm2d) and (k not in self.ignore_bn_list):
@@ -768,7 +767,7 @@ class BaseTrainer:
     def optimizer_step(self):
         """Perform a single step of the training optimizer with gradient clipping and EMA update."""
         # ============================= disable scaler/grad clip =============================
-        if getattr(self, 'sr', 0.0) > 0:
+        if getattr(self, "sr", 0.0) > 0:
             self.optimizer.step()
             self.optimizer.zero_grad()
         # ============================= disable scaler/grad clip =============================
